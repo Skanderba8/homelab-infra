@@ -1,0 +1,20 @@
+# Terraform working directory — heavy, auto-generated, never commit
+.terraform/
+
+# Lock file — commit this one, it pins provider versions
+# .terraform.lock.hcl  ← do NOT ignore this one
+
+# State files — contains sensitive info about your infra, never commit
+*.tfstate
+*.tfstate.backup
+
+# Secrets — contains your API tokens and credentials, never commit
+*.tfvars
+!*.tfvars.example
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Ansible
+*.retry
