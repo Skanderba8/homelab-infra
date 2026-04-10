@@ -71,3 +71,46 @@
       args:
         chdir: /home/ubuntu/homelab
       become_user: ubuntu
+
+    - name: Create runner directory
+      file:
+        path: /home/ubuntu/actions-runner
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Download GitHub Actions runner
+      get_url:
+        url: https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz
+        dest: /home/ubuntu/actions-runner/actions-runner.tar.gz
+      become_user: ubuntu
+
+    - name: Extract runner
+      unarchive:
+        src: /home/ubuntu/actions-runner/actions-runner.tar.gz
+        dest: /home/ubuntu/actions-runner/
+        remote_src: yes
+      become_user: ubuntu
+
+    - name: Configure GitHub Actions runner
+      shell: |
+        ./config.sh --url https://github.com/Skanderba8/homelab \
+          --token {{ github_runner_token }} \
+          --name "ec2-runner" \
+          --labels "self-hosted,ec2" \
+          --unattended \
+          --replace
+      args:
+        chdir: /home/ubuntu/actions-runner
+      become_user: ubuntu
+
+    - name: Install runner as systemd service
+      shell: ./svc.sh install ubuntu
+      args:
+        chdir: /home/ubuntu/actions-runner
+
+    - name: Start runner service
+      shell: ./svc.sh start
+      args:
+        chdir: /home/ubuntu/actions-runner
