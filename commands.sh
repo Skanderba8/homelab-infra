@@ -1,0 +1,1 @@
+ssh-keygen -f '/home/skander/.ssh/known_hosts' -R 'homelab.skander.cc'
