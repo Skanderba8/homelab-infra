@@ -1,12 +1,12 @@
 # homelab-infra
 
-Infrastructure as Code for the homelab project. Provisions an AWS EC2 instance, security group, SSH key pair, and Cloudflare DNS record using Terraform. Configures the server (Docker, app deployment) using Ansible.
+Infrastructure as Code for the homelab project. Provisions an AWS EC2 instance, security group, SSH key pair, and Cloudflare DNS record using Terraform. Configures the server (Docker, app deployment, GitHub Actions runner) using Ansible.
 
 ---
 
 ## what this does
 
-One `terraform apply` creates a live server on AWS with a public domain pointing at it. One `ansible-playbook` installs everything and starts the app. Destroy and recreate anytime — the full stack rebuilds from scratch with two commands.
+One `terraform apply` creates a live server on AWS with a public domain pointing at it. One `ansible-playbook` installs everything, starts the app, and registers a GitHub Actions self-hosted runner on EC2. Destroy and recreate anytime — the full stack rebuilds from scratch with two commands.
 
 ---
 
@@ -15,10 +15,11 @@ One `terraform apply` creates a live server on AWS with a public domain pointing
 | Tool | Purpose |
 |---|---|
 | Terraform | provisions AWS + Cloudflare resources |
-| Ansible | configures the server, installs Docker, deploys app |
+| Ansible | configures the server, installs Docker, deploys app, registers GitHub runner |
 | AWS EC2 t3.micro | the actual server (eu-west-3, Paris) |
 | AWS Security Group | firewall — only ports 22, 80, 443 open |
 | Cloudflare | DNS record pointing homelab.skander.cc at EC2 IP |
+| GitHub Actions | self-hosted runner on EC2 for CI/CD |
 
 ---
 
@@ -33,7 +34,7 @@ homelab-infra/
 ├── .gitignore
 └── ansible/
     ├── inventory.ini        # tells Ansible which server to target
-    └── playbook.yml         # tasks: install Docker, clone repo, start app
+    └── playbook.yml         # tasks: install Docker, clone repo, start app, register runner
 ```
 
 ---
@@ -46,6 +47,7 @@ homelab-infra/
 - SSH key pair at `~/.ssh/homelab-ec2` (generate with `ssh-keygen -t ed25519 -f ~/.ssh/homelab-ec2`)
 - Cloudflare API token with DNS edit permissions for skander.cc
 - Cloudflare Zone ID for skander.cc
+- GitHub PAT with `repo` scope (for runner registration) stored in `~/.bashrc` as `GITHUB_PAT`
 
 ---
 
@@ -79,20 +81,29 @@ If DNS isn't resolving locally, flush the cache:
 sudo systemctl restart systemd-resolved
 ```
 
-**4. Configure the server:**
+**4. Configure the server (installs Docker, starts app, registers GitHub runner):**
 ```bash
-# first time connecting — accept the SSH fingerprint
+# clear old SSH fingerprint if rebuilding
 ssh-keygen -f ~/.ssh/known_hosts -R homelab.skander.cc
 
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
-```
+# fetch a fresh GitHub runner registration token (expires after 1 hour)
+TOKEN=$(curl -s -X POST \
+  -H "Authorization: token $GITHUB_PAT" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/Skanderba8/homelab/actions/runners/registration-token \
+  | jq -r '.token')
 
-This installs Docker, clones the homelab repo, and starts the containers.
+# run the playbook
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
+  --extra-vars "github_runner_token=$TOKEN"
+```
 
 **5. Verify:**
 ```bash
 curl http://homelab.skander.cc/api/health
 ```
+
+After this, every push to main auto-deploys via the EC2 runner. No manual steps needed until the next `terraform destroy`.
 
 ---
 
@@ -108,8 +119,15 @@ terraform apply
 # clear old SSH fingerprint (EC2 has a new host key)
 ssh-keygen -f ~/.ssh/known_hosts -R homelab.skander.cc
 
-# wait for DNS, then reconfigure
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+# wait for DNS, then fetch a new runner token and reconfigure
+TOKEN=$(curl -s -X POST \
+  -H "Authorization: token $GITHUB_PAT" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/Skanderba8/homelab/actions/runners/registration-token \
+  | jq -r '.token')
+
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
+  --extra-vars "github_runner_token=$TOKEN"
 ```
 
 ---
@@ -136,12 +154,40 @@ EC2 instance
 ├── adds Docker's official apt repo (not the outdated Ubuntu default)
 ├── installs docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, git
 ├── adds ubuntu user to docker group
-├── clones github.com/YOUR_USERNAME/homelab to /home/ubuntu/homelab
-└── runs docker compose up -d --build
+├── clones github.com/Skanderba8/homelab to /home/ubuntu/homelab
+├── runs docker compose up -d --build
+├── creates /home/ubuntu/actions-runner
+├── downloads and extracts GitHub Actions runner binary
+├── registers runner with GitHub (uses github_runner_token passed via --extra-vars)
+└── installs and starts runner as a systemd service (survives reboots)
 ```
 
 **Why Ansible and not user_data:**
 `user_data` is a bash script that runs once on first boot. It works but has no error handling, no idempotency, and is hard to debug. Ansible is idempotent — run it 10 times, it only changes what needs changing. It also runs on demand, not just on first boot, so you can re-run it after changes.
+
+---
+
+## github actions runner
+
+The runner is registered as `ec2-runner` with labels `self-hosted,ec2`. It runs as a systemd service under the `ubuntu` user and starts automatically on reboot.
+
+**Important:** GitHub runner registration tokens expire after 1 hour. Always fetch a fresh one with the curl command above before running the playbook.
+
+**If the runner stops responding:**
+```bash
+# check runner status on EC2
+ssh -i ~/.ssh/homelab-ec2 ubuntu@homelab.skander.cc
+systemctl status actions.runner.*
+
+# restart it
+sudo systemctl restart actions.runner.Skanderba8-homelab.ec2-runner.service
+
+# check runner logs
+journalctl -u actions.runner.* -n 50
+```
+
+**If jobs are running on the wrong machine (e.g. old local runner):**
+Go to GitHub repo → Settings → Actions → Runners and remove any runners that aren't `ec2-runner`. GitHub will send jobs to whichever runner is available — if your old local runner is still registered it will pick up jobs instead of EC2.
 
 ---
 
@@ -176,6 +222,19 @@ ssh-keygen -f ~/.ssh/known_hosts -R homelab.skander.cc
 **Terraform repo used wrong Ubuntu codename on Linux Mint**
 `lsb_release -cs` returns `zena` on Linux Mint instead of `noble`. Hashicorp has no repo for `zena`. Fixed by hardcoding `noble` in the apt source.
 
+**github_runner_token undefined error in Ansible**
+Running `ansible-playbook` without `--extra-vars` causes this. The token must always be passed explicitly. See the setup commands above.
+
+**GitHub Actions jobs running on local VM instead of EC2**
+Had two runners registered — the old local `skander-VirtualBox` runner and the new `ec2-runner`. GitHub was picking the local one. Fixed by going to GitHub repo → Settings → Actions → Runners and removing the old runner.
+
+**Port 80 already in use on EC2**
+Happened when re-running `docker compose up` while the old frontend container was still running. Fixed with:
+```bash
+docker compose down
+docker compose up -d --build
+```
+
 ---
 
 ## useful commands
@@ -191,14 +250,30 @@ terraform state list        # list managed resources
 terraform state show cloudflare_record.homelab  # inspect a resource
 
 # ansible
-ansible -i ansible/inventory.ini homelab -m ping   # test connection
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+ansible -i ansible/inventory.ini homelab -m ping   # test SSH connection
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml \
+  --extra-vars "github_runner_token=$TOKEN"
+
+# fetch a fresh runner token
+TOKEN=$(curl -s -X POST \
+  -H "Authorization: token $GITHUB_PAT" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/Skanderba8/homelab/actions/runners/registration-token \
+  | jq -r '.token')
+echo $TOKEN  # verify it printed something
 
 # ssh into server
 ssh -i ~/.ssh/homelab-ec2 ubuntu@homelab.skander.cc
 
 # check containers on server
 ssh ubuntu@homelab.skander.cc "docker ps"
+
+# check GitHub runner on server
+ssh ubuntu@homelab.skander.cc "systemctl status actions.runner.*"
+
+# check DNS
+nslookup homelab.skander.cc
+curl ifconfig.me  # run this on EC2 to get its public IP — should match
 ```
 
 ---
@@ -228,6 +303,7 @@ terraform destroy
 - `state: present` = install if not there, leave alone if already installed (idempotent).
 - `become_user: ubuntu` drops back to the ubuntu user for tasks that shouldn't run as root.
 - `meta: reset_connection` resets the SSH session to pick up group membership changes (like adding ubuntu to the docker group).
+- Variables passed with `--extra-vars` are available as `{{ variable_name }}` in the playbook.
 
 **AWS**
 - Security groups are stateful firewalls — you define ingress and egress rules separately.
@@ -239,3 +315,9 @@ terraform destroy
 - Terraform's Cloudflare provider updates DNS automatically when EC2 IP changes.
 - `proxied = false` means DNS only, no Cloudflare proxy. Set to `true` later for DDoS protection and HTTPS termination.
 - TTL 60 means DNS records update within 60 seconds — important when IPs change on destroy/apply.
+
+**GitHub Actions self-hosted runner**
+- Runner registration tokens expire after 1 hour — always fetch a fresh one before running the playbook.
+- The runner is installed as a systemd service so it survives reboots.
+- If multiple runners share the same label (`self-hosted`), GitHub picks whichever is available — can cause jobs to run on the wrong machine. Remove stale runners from GitHub Settings.
+- Runner polls GitHub outbound — no open port needed on EC2.
