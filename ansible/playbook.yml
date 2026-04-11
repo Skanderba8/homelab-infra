@@ -63,6 +63,27 @@
         update: yes
       become_user: ubuntu
 
+          - name: Create .env file
+      copy:
+        dest: /home/ubuntu/homelab/.env
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+        content: |
+          POSTGRES_USER={{ postgres_user }}
+          POSTGRES_PASSWORD={{ postgres_password }}
+          POSTGRES_DB={{ postgres_db }}
+          DATABASE_URL=postgresql://{{ postgres_user }}:{{ postgres_password }}@db:5432/{{ postgres_db }}
+
+    - name: Reset SSH connection to pick up docker group
+      meta: reset_connection
+
+    - name: Start containers
+      shell: docker compose up -d --build
+      args:
+        chdir: /home/ubuntu/homelab
+      become_user: ubuntu
+
     - name: Reset SSH connection to pick up docker group
       meta: reset_connection
 
@@ -104,6 +125,8 @@
       args:
         chdir: /home/ubuntu/actions-runner
       become_user: ubuntu
+      when: not runner_credentials.stat.exists  # 👈 skip if already registered
+
 
     - name: Install runner as systemd service
       shell: ./svc.sh install ubuntu

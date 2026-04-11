@@ -15,6 +15,6 @@
 # Crash logs
 crash.log
 crash.*.log
-
+vars.yml
 # Ansible
 *.retry
