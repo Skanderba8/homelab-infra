@@ -188,9 +188,12 @@
       shell: ./svc.sh install ubuntu
       args:
         chdir: /home/ubuntu/actions-runner
+      when: not runner_service.stat.exists   # skip if service file already exists
+
 
     - name: Start runner service
       # Starts the runner service right now (don't wait for reboot)
       shell: ./svc.sh start
       args:
         chdir: /home/ubuntu/actions-runner
+      when: not runner_service.stat.exists   # skip if already running
