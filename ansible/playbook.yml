@@ -167,8 +167,6 @@
       # "--unattended" skips interactive prompts
       # "--replace" re-registers if a runner with this name already exists
       # "when:" skips this task if .credentials already exists (already registered)
-      # Since you terraform destroy+apply every time, this will always run —
-      # but the check is good practice if you ever re-run on an existing server
       shell: |
         ./config.sh --url https://github.com/Skanderba8/homelab \
           --token {{ github_runner_token }} \
@@ -181,19 +179,28 @@
       become_user: ubuntu
       when: not runner_credentials.stat.exists
 
+    - name: Check if runner service already installed
+      # Checks if the systemd service file exists — svc.sh writes this file
+      # when the runner is installed as a service.
+      # If it exists, skip the install and start steps to avoid errors.
+      stat:
+        path: /etc/systemd/system/actions.runner.Skanderba8-homelab.ec2-runner.service
+      register: runner_service
+
     - name: Install runner as systemd service
       # systemd is Linux's service manager — it controls what starts on boot
       # This makes the runner a proper service that survives reboots
       # "svc.sh install ubuntu" means: install the service, run it as the ubuntu user
+      # "when:" skips this if the service file already exists
       shell: ./svc.sh install ubuntu
       args:
         chdir: /home/ubuntu/actions-runner
-      when: not runner_service.stat.exists   # skip if service file already exists
-
+      when: not runner_service.stat.exists
 
     - name: Start runner service
       # Starts the runner service right now (don't wait for reboot)
+      # "when:" skips this if the service was already installed and running
       shell: ./svc.sh start
       args:
         chdir: /home/ubuntu/actions-runner
-      when: not runner_service.stat.exists   # skip if already running
+      when: not runner_service.stat.exists
