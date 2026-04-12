@@ -86,7 +86,8 @@
     - name: Install AWS CLI
       pip:
         name: awscli
-        executable: pip3 
+        executable: pip3
+        extra_args: "--break-system-packages" 
 
     - name: Authenticate Docker to ECR
       shell: |
