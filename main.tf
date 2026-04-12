@@ -135,13 +135,13 @@ resource "cloudflare_record" "homelab" {
 }
 
 output "public_ip" {
-  value = aws_instance.homelab.public_ip
+  value = aws_instance.homelab.public_ip  # Fixed: matches resource name below
 }
 
-output "url" {
-  value = "http://${var.domain}"
+output "ecr_backend_repository_url" {
+  value = aws_ecr_repository.homelab_backend.repository_url
 }
 
-output "ecr_repository_url" {
-  value = aws_ecr_repository.homelab.repository_url
+output "ecr_frontend_repository_url" {
+  value = aws_ecr_repository.homelab_frontend.repository_url
 }
