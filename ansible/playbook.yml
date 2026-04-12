@@ -103,9 +103,8 @@
       shell: |
         aws ecr describe-images \
           --repository-name homelab \
-          --region {{ aws_region }} \
-          --query 'imageDetails[0]' \
-          --output text 2>/dev/null || echo "NONE"
+          --region {{ aws_region }} 2>/dev/null \
+        && echo "EXISTS" || echo "NONE"
       register: ecr_image_check
       become_user: ubuntu
 
@@ -114,4 +113,4 @@
       args:
         chdir: /home/ubuntu/homelab
       become_user: ubuntu
-      when: ecr_image_check.stdout != "NONE"
+      when: "'EXISTS' in ecr_image_check.stdout"
