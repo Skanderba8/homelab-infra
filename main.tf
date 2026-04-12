@@ -19,6 +19,41 @@ provider "cloudflare" {
   api_token = var.cloudflare_api_token
 }
 
+resource "aws_ecr_repository" "homelab" {
+  name                 = "homelab"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name = "homelab-ecr"
+  }
+}
+resource "aws_iam_role" "ec2_ecr_role" {
+  name = "homelab-ec2-ecr-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecr_read" {
+  role       = aws_iam_role.ec2_ecr_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+resource "aws_iam_instance_profile" "homelab" {
+  name = "homelab-instance-profile"
+  role = aws_iam_role.ec2_ecr_role.name
+}
+
 resource "aws_key_pair" "homelab" {
   key_name   = "homelab-key"
   public_key = file("~/.ssh/homelab-ec2.pub")
@@ -65,11 +100,15 @@ resource "aws_instance" "homelab" {
   instance_type          = "t3.micro"
   key_name               = aws_key_pair.homelab.key_name
   vpc_security_group_ids = [aws_security_group.homelab.id]
+  iam_instance_profile   = aws_iam_instance_profile.homelab.name  # 👈 add this
+
 
   tags = {
     Name = "homelab"
   }
 }
+
+
 
 resource "cloudflare_record" "homelab" {
   zone_id = var.cloudflare_zone_id
@@ -86,4 +125,8 @@ output "public_ip" {
 
 output "url" {
   value = "http://${var.domain}"
+}
+
+output "ecr_repository_url" {
+  value = aws_ecr_repository.homelab.repository_url
 }
