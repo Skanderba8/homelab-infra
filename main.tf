@@ -19,8 +19,8 @@ provider "cloudflare" {
   api_token = var.cloudflare_api_token
 }
 
-resource "aws_ecr_repository" "homelab backend" {
-  name                 = "homelab backend"
+resource "aws_ecr_repository" "homelab_backend" {
+  name                 = "homelab-backend"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
 
