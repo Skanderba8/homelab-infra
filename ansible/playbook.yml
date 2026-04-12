@@ -16,6 +16,7 @@
           - ca-certificates
           - curl
           - gnupg
+          - python3-pip
         state: present
 
     - name: Create keyrings directory
@@ -83,9 +84,9 @@
           ECR_REPOSITORY_URL={{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/homelab
 
     - name: Install AWS CLI
-      apt:
+      pip:
         name: awscli
-        state: present
+        executable: pip3 
 
     - name: Authenticate Docker to ECR
       shell: |
