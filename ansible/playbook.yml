@@ -101,13 +101,14 @@
 
     - name: Check if ECR image exists
       shell: |
-        aws ecr describe-images \
+        COUNT=$(aws ecr describe-images \
           --repository-name homelab \
-          --region {{ aws_region }} 2>/dev/null \
-        && echo "EXISTS" || echo "NONE"
+          --region {{ aws_region }} \
+          --query 'length(imageDetails)' \
+          --output text 2>/dev/null || echo "0")
+        if [ "$COUNT" -gt "0" ]; then echo "EXISTS"; else echo "NONE"; fi
       register: ecr_image_check
       become_user: ubuntu
-
     - name: Start containers
       shell: docker compose pull && docker compose up -d
       args:
