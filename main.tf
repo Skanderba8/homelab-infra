@@ -32,6 +32,20 @@ resource "aws_ecr_repository" "homelab" {
     Name = "homelab-ecr"
   }
 }
+
+resource "aws_ecr_repository" "homelab_frontend" {
+  name                 = "homelab-frontend"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name = "homelab-frontend-ecr"
+  }
+}
 resource "aws_iam_role" "ec2_ecr_role" {
   name = "homelab-ec2-ecr-role"
 
