@@ -99,8 +99,19 @@
     - name: Reset SSH connection to pick up docker group
       meta: reset_connection
 
-    - name: Start containers
-      shell: docker compose pull && docker compose up -d
-      args:
-        chdir: /home/ubuntu/homelab
-      become_user: ubuntu
+    - name: Check if ECR image exists
+  shell: |
+    aws ecr describe-images \
+      --repository-name homelab \
+      --region {{ aws_region }} \
+      --query 'imageDetails[0]' \
+      --output text 2>/dev/null || echo "NONE"
+  register: ecr_image_check
+  become_user: ubuntu
+
+- name: Start containers
+  shell: docker compose pull && docker compose up -d
+  args:
+    chdir: /home/ubuntu/homelab
+  become_user: ubuntu
+  when: ecr_image_check.stdout != "NONE"
