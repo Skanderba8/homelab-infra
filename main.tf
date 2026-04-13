@@ -134,6 +134,15 @@ resource "cloudflare_record" "homelab" {
   proxied = false
 }
 
+resource "cloudflare_record" "grafana" {
+  zone_id = var.cloudflare_zone_id
+  name    = "grafana"
+  value   = aws_instance.homelab.public_ip
+  type    = "A"
+  ttl     = 60
+  proxied = false
+}
+
 output "public_ip" {
   value = aws_instance.homelab.public_ip  # Fixed: matches resource name below
 }

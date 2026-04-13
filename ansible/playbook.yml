@@ -82,6 +82,7 @@
           POSTGRES_DB={{ postgres_db }}
           DATABASE_URL=postgresql://{{ postgres_user }}:{{ postgres_password }}@db:5432/{{ postgres_db }}
           ECR_REPOSITORY_URL={{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/homelab
+          GRAFANA_PASSWORD={{ grafana_password }}
 
     - name: Install AWS CLI
       pip:
