@@ -18,6 +18,12 @@
           - gnupg
           - python3-pip
         state: present
+    
+    - name: Install AWS CLI
+      pip:
+        name: awscli
+        executable: pip3
+        extra_args: "--break-system-packages" 
 
     - name: Create keyrings directory
       file:
@@ -94,12 +100,6 @@
           ECR_REPOSITORY_URL={{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/homelab
           GRAFANA_PASSWORD={{ secret.GRAFANA_PASSWORD }}
 
-    - name: Install AWS CLI
-      pip:
-        name: awscli
-        executable: pip3
-        extra_args: "--break-system-packages" 
-
     - name: Authenticate Docker to ECR
       shell: |
         aws ecr get-login-password --region {{ aws_region }} | \
@@ -112,17 +112,32 @@
 
     - name: Check if ECR image exists
       shell: |
-        COUNT=$(aws ecr describe-images \
+        aws ecr describe-images \
           --repository-name homelab \
           --region {{ aws_region }} \
+          --image-ids imageTag=latest \
           --query 'length(imageDetails)' \
-          --output text 2>/dev/null || echo "0")
-        if [ "$COUNT" -gt "0" ]; then echo "EXISTS"; else echo "NONE"; fi
+          --output text 2>/dev/null || echo "0"
       register: ecr_image_check
       become_user: ubuntu
-    - name: Start containers
-      shell: docker compose pull && docker compose up -d
-      args:
-        chdir: /home/ubuntu/homelab
-      become_user: ubuntu
-      when: "'EXISTS' in ecr_image_check.stdout"
+
+    # ── TRIGGER GITHUB ACTIONS DEPLOY ────────────────────────────────────────
+
+    - name: Trigger GitHub Actions deploy workflow
+      uri:
+        url: "https://api.github.com/repos/Skanderba8/homelab/actions/workflows/deploy.yml/dispatches"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ github_token }}"
+          Accept: "application/vnd.github+json"
+          X-GitHub-Api-Version: "2022-11-28"
+        body_format: json
+        body:
+          ref: "main"
+          inputs:
+            force_build: "true"
+        status_code: 204
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_become: false
