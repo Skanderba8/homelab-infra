@@ -70,19 +70,29 @@
         update: yes
       become_user: ubuntu
 
-    - name: Create .env file
+    - name: Fetch secrets from AWS Secrets Manager
+      shell: |
+        aws secretsmanager get-secret-value \
+          --secret-id homelab/env \
+          --region {{ aws_region }} \
+          --query SecretString \
+          --output text
+      register: secret_value
+
+    - name: Create .env file from Secrets Manager
       copy:
         dest: /home/ubuntu/homelab/.env
         owner: ubuntu
         group: ubuntu
         mode: '0600'
         content: |
-          POSTGRES_USER={{ postgres_user }}
-          POSTGRES_PASSWORD={{ postgres_password }}
-          POSTGRES_DB={{ postgres_db }}
-          DATABASE_URL=postgresql://{{ postgres_user }}:{{ postgres_password }}@db:5432/{{ postgres_db }}
+          {% set secret = secret_value.stdout | from_json %}
+          POSTGRES_USER={{ secret.POSTGRES_USER }}
+          POSTGRES_PASSWORD={{ secret.POSTGRES_PASSWORD }}
+          POSTGRES_DB={{ secret.POSTGRES_DB }}
+          DATABASE_URL={{ secret.DATABASE_URL }}
           ECR_REPOSITORY_URL={{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/homelab
-          GRAFANA_PASSWORD={{ grafana_password }}
+          GRAFANA_PASSWORD={{ secret.GRAFANA_PASSWORD }}
 
     - name: Install AWS CLI
       pip:

@@ -58,7 +58,23 @@ resource "aws_iam_role" "ec2_ecr_role" {
     }]
   })
 }
+resource "aws_iam_role_policy" "secrets_manager_read" {
+  name = "homelab-secrets-manager-read"
+  role = aws_iam_role.ec2_ecr_role.name
 
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = "arn:aws:secretsmanager:eu-west-3:166799230506:secret:homelab/env-*"
+      }
+    ]
+  })
+}
 resource "aws_iam_role_policy_attachment" "ecr_read" {
   role       = aws_iam_role.ec2_ecr_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
